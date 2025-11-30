@@ -11,7 +11,7 @@ AWS_REGION = st.secrets["AWS"]["AWS_REGION"]
 
 ATHENA_DATABASE = "esp32_data"           # Your Athena database
 ATHENA_TABLE = "sensor_history"          # Your Athena table
-S3_OUTPUT = "s3://iot-esp32-firehose-data-rek/"  # Athena query results bucket
+S3_OUTPUT = "s3://esp32-athena-results-rek/"  # Athena query results bucket
 
 # --- Initialize Athena client ---
 athena_client = boto3.client(
