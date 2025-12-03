@@ -9,8 +9,8 @@ AWS_ACCESS_KEY_ID = st.secrets["AWS"]["AWS_ACCESS_KEY_ID"]
 AWS_SECRET_ACCESS_KEY = st.secrets["AWS"]["AWS_SECRET_ACCESS_KEY"]
 AWS_REGION = st.secrets["AWS"]["AWS_REGION"]
 
-ATHENA_DATABASE = "esp32_data"           # Athena database
-ATHENA_TABLE = "sensor_history"          # Athena table
+ATHENA_DATABASE = "esp32_data"           # Your Athena database
+ATHENA_TABLE = "sensor_history"          # Your Athena table
 S3_OUTPUT = "s3://esp32-athena-results-rek/"  # Athena query results bucket
 
 # --- Initialize Athena client ---
@@ -53,105 +53,72 @@ def run_athena_query(query):
     df = pd.DataFrame(rows, columns=columns)
     return df
 
-# --- Fetch latest 1000 rows from Athena ---
-query = f"SELECT *, \
-json_extract_scalar(mpu6050, '$.roll_deg') AS roll_deg, \
-json_extract_scalar(mpu6050, '$.pitch_deg') AS pitch_deg, \
-json_extract_scalar(mpu6050, '$.yaw_deg') AS yaw_deg \
-FROM {ATHENA_TABLE} ORDER BY timestamp_ms DESC LIMIT 100"
+# --- Athena query: explicitly extract JSON fields ---
+query = f"""
+SELECT 
+    timestamp_ms,
+    ky028_temp_C,
+    bme_temp_C,
+    humidity_percent,
+    distance_cm,
+    pressure_hPa,
+    json_extract_scalar(mpu6050, '$.roll_deg') AS roll_deg,
+    json_extract_scalar(mpu6050, '$.pitch_deg') AS pitch_deg,
+    json_extract_scalar(mpu6050, '$.yaw_deg') AS yaw_deg
+FROM {ATHENA_TABLE}
+ORDER BY timestamp_ms DESC
+LIMIT 100
+"""
 
 df = run_athena_query(query)
 
-if df.empty:
-    st.warning("No data retrieved from Athena.")
-else:
-    # --- Convert timestamp ---
-    df['timestamp_ms'] = pd.to_datetime(df['timestamp_ms'], unit='ms')
+# --- Debug preview ---
+st.subheader("Raw Data Preview")
+st.write(df.head())
+st.write("Columns:", df.columns)
 
-    # --- Convert numeric columns ---
-    numeric_cols = ["ky028_temp_C", "bme_temp_C", "humidity_percent", "pressure_hPa",
-                    "distance_cm", "roll_deg", "pitch_deg", "yaw_deg",
-                    "processing_time_ms", "payload_size_bytes"]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+# --- Convert numeric columns ---
+numeric_cols = ["ky028_temp_C", "bme_temp_C", "humidity_percent", "pressure_hPa", 
+                "distance_cm", "roll_deg", "pitch_deg", "yaw_deg"]
+for col in numeric_cols:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # --- Layout: Charts ---
-    st.subheader("Temperature over time")
-    temp_cols = ["ky028_temp_C", "bme_temp_C"]
-    available_temp_cols = [c for c in temp_cols if c in df.columns]
-    if available_temp_cols:
-        fig_temp = px.line(
-            df,
-            x="timestamp_ms",
-            y=available_temp_cols,
-            title="Temperature Sensors (°C)",
-            labels={"value": "Temperature (°C)", "timestamp_ms": "Time", "variable": "Sensor"}
-        )
-        st.plotly_chart(fig_temp, use_container_width=True)
+# --- Layout: Line charts ---
+st.subheader("Temperature over time")
+if "bme_temp_C" in df.columns:
+    fig_temp = px.line(df, x="timestamp_ms", y="bme_temp_C", title="BME Temperature (°C)", markers=True)
+    st.plotly_chart(fig_temp, use_container_width=True)
 
-    st.subheader("Humidity over time")
-    if "humidity_percent" in df.columns:
-        fig_humidity = px.line(
-            df,
-            x="timestamp_ms",
-            y="humidity_percent",
-            title="Humidity (%)",
-            labels={"humidity_percent": "Humidity (%)", "timestamp_ms": "Time"}
-        )
-        st.plotly_chart(fig_humidity, use_container_width=True)
+st.subheader("Humidity over time")
+if "humidity_percent" in df.columns:
+    fig_humidity = px.line(df, x="timestamp_ms", y="humidity_percent", title="Humidity (%)", markers=True)
+    st.plotly_chart(fig_humidity, use_container_width=True)
 
-    st.subheader("Pressure over time")
-    if "pressure_hPa" in df.columns:
-        fig_pressure = px.line(
-            df,
-            x="timestamp_ms",
-            y="pressure_hPa",
-            title="Pressure (hPa)",
-            labels={"pressure_hPa": "Pressure (hPa)", "timestamp_ms": "Time"}
-        )
-        st.plotly_chart(fig_pressure, use_container_width=True)
+st.subheader("Distance over time")
+if "distance_cm" in df.columns:
+    fig_distance = px.line(df, x="timestamp_ms", y="distance_cm", title="Distance (cm)", markers=True)
+    st.plotly_chart(fig_distance, use_container_width=True)
 
-    st.subheader("Distance over time")
-    if "distance_cm" in df.columns:
-        fig_distance = px.line(
-            df,
-            x="timestamp_ms",
-            y="distance_cm",
-            title="Distance (cm)",
-            labels={"distance_cm": "Distance (cm)", "timestamp_ms": "Time"}
-        )
-        st.plotly_chart(fig_distance, use_container_width=True)
+st.subheader("Pressure over time")
+if "pressure_hPa" in df.columns:
+    fig_pressure = px.line(df, x="timestamp_ms", y="pressure_hPa", title="Pressure (hPa)", markers=True)
+    st.plotly_chart(fig_pressure, use_container_width=True)
 
-    st.subheader("IMU Data (Roll / Pitch / Yaw)")
-    imu_cols = ["roll_deg", "pitch_deg", "yaw_deg"]
-    available_imu_cols = [c for c in imu_cols if c in df.columns]
-    if available_imu_cols:
-        fig_imu = px.line(
-            df,
-            x="timestamp_ms",
-            y=available_imu_cols,
-            title="MPU6050 IMU Data",
-            labels={"value": "Degrees", "timestamp_ms": "Time", "variable": "Axis"}
-        )
-        st.plotly_chart(fig_imu, use_container_width=True)
+st.subheader("IMU Data (Roll / Pitch / Yaw)")
+imu_cols = ["roll_deg", "pitch_deg", "yaw_deg"]
+if all(c in df.columns for c in imu_cols):
+    fig_imu = px.line(df, x="timestamp_ms", y=imu_cols, title="MPU6050 IMU Data", markers=True)
+    st.plotly_chart(fig_imu, use_container_width=True)
 
-    # --- Latest metrics ---
-    st.subheader("Latest Sensor Values")
+# --- Latest metrics ---
+st.subheader("Latest Sensor Values")
+if not df.empty:
     latest = df.iloc[0]
-    cols = st.columns(4)
-    metric_idx = 0
-    sensor_metrics = {
-        "BME Temp (°C)": "bme_temp_C",
-        "KY028 Temp (°C)": "ky028_temp_C",
-        "Humidity (%)": "humidity_percent",
-        "Pressure (hPa)": "pressure_hPa",
-        "Distance (cm)": "distance_cm",
-        "Roll (°)": "roll_deg",
-        "Pitch (°)": "pitch_deg",
-        "Yaw (°)": "yaw_deg"
-    }
-    for name, col_name in sensor_metrics.items():
-        if col_name in latest:
-            cols[metric_idx % 4].metric(name, latest[col_name])
-            metric_idx += 1
+    cols = st.columns(3)
+    if "bme_temp_C" in latest:
+        cols[0].metric("BME Temp (°C)", latest["bme_temp_C"])
+    if "humidity_percent" in latest:
+        cols[1].metric("Humidity (%)", latest["humidity_percent"])
+    if "distance_cm" in latest:
+        cols[2].metric("Distance (cm)", latest["distance_cm"])
