@@ -53,72 +53,76 @@ def run_athena_query(query):
     df = pd.DataFrame(rows, columns=columns)
     return df
 
-# --- Athena query: explicitly extract JSON fields ---
+# --- Athena query (extract struct fields properly) ---
 query = f"""
 SELECT 
     timestamp_ms,
-    ky028_temp_C,
-    bme_temp_C,
+    ky028_temp_c,
+    bme_temp_c,
     humidity_percent,
+    pressure_hpa,
     distance_cm,
-    pressure_hPa,
-    json_extract_scalar(mpu6050, '$.roll_deg') AS roll_deg,
-    json_extract_scalar(mpu6050, '$.pitch_deg') AS pitch_deg,
-    json_extract_scalar(mpu6050, '$.yaw_deg') AS yaw_deg
+    mpu6050.roll_deg AS roll_deg,
+    mpu6050.pitch_deg AS pitch_deg,
+    mpu6050.yaw_deg AS yaw_deg
 FROM {ATHENA_TABLE}
 ORDER BY timestamp_ms DESC
 LIMIT 100
 """
-
 df = run_athena_query(query)
 
-# --- Debug preview ---
+# --- Debug: show raw data ---
 st.subheader("Raw Data Preview")
 st.write(df.head())
 st.write("Columns:", df.columns)
 
 # --- Convert numeric columns ---
-numeric_cols = ["ky028_temp_C", "bme_temp_C", "humidity_percent", "pressure_hPa", 
-                "distance_cm", "roll_deg", "pitch_deg", "yaw_deg"]
+numeric_cols = [
+    "ky028_temp_c", "bme_temp_c", "humidity_percent", "pressure_hpa",
+    "distance_cm", "roll_deg", "pitch_deg", "yaw_deg"
+]
 for col in numeric_cols:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
 # --- Layout: Line charts ---
 st.subheader("Temperature over time")
-if "bme_temp_C" in df.columns:
-    fig_temp = px.line(df, x="timestamp_ms", y="bme_temp_C", title="BME Temperature (°C)", markers=True)
+if "bme_temp_c" in df.columns:
+    fig_temp = px.line(df, x=df.index, y="bme_temp_c", title="BME Temperature (°C)", markers=True)
     st.plotly_chart(fig_temp, use_container_width=True)
 
 st.subheader("Humidity over time")
 if "humidity_percent" in df.columns:
-    fig_humidity = px.line(df, x="timestamp_ms", y="humidity_percent", title="Humidity (%)", markers=True)
+    fig_humidity = px.line(df, x=df.index, y="humidity_percent", title="Humidity (%)", markers=True)
     st.plotly_chart(fig_humidity, use_container_width=True)
+
+st.subheader("Pressure over time")
+if "pressure_hpa" in df.columns:
+    fig_pressure = px.line(df, x=df.index, y="pressure_hpa", title="Pressure (hPa)", markers=True)
+    st.plotly_chart(fig_pressure, use_container_width=True)
 
 st.subheader("Distance over time")
 if "distance_cm" in df.columns:
-    fig_distance = px.line(df, x="timestamp_ms", y="distance_cm", title="Distance (cm)", markers=True)
+    fig_distance = px.line(df, x=df.index, y="distance_cm", title="Distance (cm)", markers=True)
     st.plotly_chart(fig_distance, use_container_width=True)
-
-st.subheader("Pressure over time")
-if "pressure_hPa" in df.columns:
-    fig_pressure = px.line(df, x="timestamp_ms", y="pressure_hPa", title="Pressure (hPa)", markers=True)
-    st.plotly_chart(fig_pressure, use_container_width=True)
 
 st.subheader("IMU Data (Roll / Pitch / Yaw)")
 imu_cols = ["roll_deg", "pitch_deg", "yaw_deg"]
 if all(c in df.columns for c in imu_cols):
-    fig_imu = px.line(df, x="timestamp_ms", y=imu_cols, title="MPU6050 IMU Data", markers=True)
+    fig_imu = px.line(df, x=df.index, y=imu_cols, title="MPU6050 IMU Data", markers=True)
     st.plotly_chart(fig_imu, use_container_width=True)
 
 # --- Latest metrics ---
 st.subheader("Latest Sensor Values")
 if not df.empty:
     latest = df.iloc[0]
-    cols = st.columns(3)
-    if "bme_temp_C" in latest:
-        cols[0].metric("BME Temp (°C)", latest["bme_temp_C"])
+    cols = st.columns(4)
+    if "bme_temp_c" in latest:
+        cols[0].metric("BME Temp (°C)", latest["bme_temp_c"])
     if "humidity_percent" in latest:
         cols[1].metric("Humidity (%)", latest["humidity_percent"])
     if "distance_cm" in latest:
         cols[2].metric("Distance (cm)", latest["distance_cm"])
+    if all(c in latest for c in imu_cols):
+        imu_text = f"Roll: {latest['roll_deg']:.2f}, Pitch: {latest['pitch_deg']:.2f}, Yaw: {latest['yaw_deg']:.2f}"
+        cols[3].metric("IMU Data", imu_text)
