@@ -3,15 +3,19 @@ import boto3
 import pandas as pd
 import plotly.express as px
 import time
+from streamlit_autorefresh import st_autorefresh     # <-- ADDED
+
+# --- AUTO REFRESH every 5 seconds ---
+st_autorefresh(interval=5000, key="rerun")           # <-- ADDED
 
 # --- AWS credentials from Streamlit Secrets ---
 AWS_ACCESS_KEY_ID = st.secrets["AWS"]["AWS_ACCESS_KEY_ID"]
 AWS_SECRET_ACCESS_KEY = st.secrets["AWS"]["AWS_SECRET_ACCESS_KEY"]
 AWS_REGION = st.secrets["AWS"]["AWS_REGION"]
 
-ATHENA_DATABASE = "esp32_data"           # Your Athena database
-ATHENA_TABLE = "sensor_history"          # Your Athena table
-S3_OUTPUT = "s3://esp32-athena-results-rek/"  # Athena query results bucket
+ATHENA_DATABASE = "esp32_data"
+ATHENA_TABLE = "sensor_history"
+S3_OUTPUT = "s3://esp32-athena-results-rek/"
 
 # --- Initialize Athena client ---
 athena_client = boto3.client(
@@ -53,7 +57,7 @@ def run_athena_query(query):
     df = pd.DataFrame(rows, columns=columns)
     return df
 
-# --- Athena query (extract struct fields properly) ---
+# --- Athena query ---
 query = f"""
 SELECT 
     timestamp_ms,
@@ -71,7 +75,7 @@ LIMIT 100
 """
 df = run_athena_query(query)
 
-# --- Debug: show raw data ---
+# --- Debug ---
 st.subheader("Raw Data Preview")
 st.write(df.head())
 st.write("Columns:", df.columns)
@@ -85,7 +89,7 @@ for col in numeric_cols:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# --- Layout: Line charts ---
+# --- Charts ---
 st.subheader("Temperature over time")
 if "bme_temp_c" in df.columns:
     fig_temp = px.line(df, x=df.index, y="bme_temp_c", title="BME Temperature (°C)", markers=True)
@@ -112,32 +116,26 @@ if all(c in df.columns for c in imu_cols):
     fig_imu = px.line(df, x=df.index, y=imu_cols, title="MPU6050 IMU Data", markers=True)
     st.plotly_chart(fig_imu, use_container_width=True)
 
-# --- Latest metrics with distance alert ---
+# --- Latest metrics ---
 st.subheader("Latest Sensor Values")
 if not df.empty:
     latest = df.iloc[0]
     cols = st.columns(4)
-    
-    # BME Temp
+
     if "bme_temp_c" in latest:
         cols[0].metric("BME Temp (°C)", latest["bme_temp_c"])
-        
-    # Humidity
+
     if "humidity_percent" in latest:
         cols[1].metric("Humidity (%)", latest["humidity_percent"])
-        
-    # Distance with alert
+
     if "distance_cm" in latest:
         distance_val = latest["distance_cm"]
         if distance_val < 3:
-            # Red alert
             cols[2].metric("Distance (cm)", f"{distance_val} ⚠️", delta="Too Close!", delta_color="inverse")
             st.error(f"⚠️ ALERT: Object too close! Distance = {distance_val} cm")
         else:
             cols[2].metric("Distance (cm)", distance_val)
-    
-    # IMU Data
+
     if all(c in latest for c in imu_cols):
         imu_text = f"Roll: {latest['roll_deg']:.2f}, Pitch: {latest['pitch_deg']:.2f}, Yaw: {latest['yaw_deg']:.2f}"
         cols[3].metric("IMU Data", imu_text)
-
