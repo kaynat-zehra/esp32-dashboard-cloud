@@ -112,17 +112,32 @@ if all(c in df.columns for c in imu_cols):
     fig_imu = px.line(df, x=df.index, y=imu_cols, title="MPU6050 IMU Data", markers=True)
     st.plotly_chart(fig_imu, use_container_width=True)
 
-# --- Latest metrics ---
+# --- Latest metrics with distance alert ---
 st.subheader("Latest Sensor Values")
 if not df.empty:
     latest = df.iloc[0]
     cols = st.columns(4)
+    
+    # BME Temp
     if "bme_temp_c" in latest:
         cols[0].metric("BME Temp (°C)", latest["bme_temp_c"])
+        
+    # Humidity
     if "humidity_percent" in latest:
         cols[1].metric("Humidity (%)", latest["humidity_percent"])
+        
+    # Distance with alert
     if "distance_cm" in latest:
-        cols[2].metric("Distance (cm)", latest["distance_cm"])
+        distance_val = latest["distance_cm"]
+        if distance_val < 3:
+            # Red alert
+            cols[2].metric("Distance (cm)", f"{distance_val} ⚠️", delta="Too Close!", delta_color="inverse")
+            st.error(f"⚠️ ALERT: Object too close! Distance = {distance_val} cm")
+        else:
+            cols[2].metric("Distance (cm)", distance_val)
+    
+    # IMU Data
     if all(c in latest for c in imu_cols):
         imu_text = f"Roll: {latest['roll_deg']:.2f}, Pitch: {latest['pitch_deg']:.2f}, Yaw: {latest['yaw_deg']:.2f}"
         cols[3].metric("IMU Data", imu_text)
+
