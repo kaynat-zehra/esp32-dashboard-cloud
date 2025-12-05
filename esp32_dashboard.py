@@ -3,19 +3,25 @@ import boto3
 import pandas as pd
 import plotly.express as px
 import time
-from streamlit_autorefresh import st_autorefresh     # <-- ADDED
 
-# --- AUTO REFRESH every 5 seconds ---
-st_autorefresh(interval=5000, key="rerun")           # <-- ADDED
+# --- Streamlit page config ---
+st.set_page_config(page_title="ESP32 Sensor Dashboard", layout="wide")
+st.title("ESP32 Sensor Dashboard")
+
+# --- Auto refresh every 5 seconds (NO external library) ---
+placeholder = st.empty()
+with placeholder:
+    st.caption("Auto-refreshing every 5 seconds…")
+    time.sleep(5)
 
 # --- AWS credentials from Streamlit Secrets ---
 AWS_ACCESS_KEY_ID = st.secrets["AWS"]["AWS_ACCESS_KEY_ID"]
 AWS_SECRET_ACCESS_KEY = st.secrets["AWS"]["AWS_SECRET_ACCESS_KEY"]
 AWS_REGION = st.secrets["AWS"]["AWS_REGION"]
 
-ATHENA_DATABASE = "esp32_data"
-ATHENA_TABLE = "sensor_history"
-S3_OUTPUT = "s3://esp32-athena-results-rek/"
+ATHENA_DATABASE = "esp32_data"           
+ATHENA_TABLE = "sensor_history"          
+S3_OUTPUT = "s3://esp32-athena-results-rek/"  
 
 # --- Initialize Athena client ---
 athena_client = boto3.client(
@@ -24,10 +30,6 @@ athena_client = boto3.client(
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY
 )
-
-# --- Streamlit page config ---
-st.set_page_config(page_title="ESP32 Sensor Dashboard", layout="wide")
-st.title("ESP32 Sensor Dashboard")
 
 # --- Function to query Athena ---
 def run_athena_query(query):
@@ -75,7 +77,7 @@ LIMIT 100
 """
 df = run_athena_query(query)
 
-# --- Debug ---
+# --- Debug: show raw data ---
 st.subheader("Raw Data Preview")
 st.write(df.head())
 st.write("Columns:", df.columns)
@@ -89,7 +91,7 @@ for col in numeric_cols:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# --- Charts ---
+# --- Layout: Line charts ---
 st.subheader("Temperature over time")
 if "bme_temp_c" in df.columns:
     fig_temp = px.line(df, x=df.index, y="bme_temp_c", title="BME Temperature (°C)", markers=True)
@@ -116,18 +118,21 @@ if all(c in df.columns for c in imu_cols):
     fig_imu = px.line(df, x=df.index, y=imu_cols, title="MPU6050 IMU Data", markers=True)
     st.plotly_chart(fig_imu, use_container_width=True)
 
-# --- Latest metrics ---
+# --- Latest metrics with distance alert ---
 st.subheader("Latest Sensor Values")
 if not df.empty:
     latest = df.iloc[0]
     cols = st.columns(4)
 
+    # BME Temperature
     if "bme_temp_c" in latest:
         cols[0].metric("BME Temp (°C)", latest["bme_temp_c"])
 
+    # Humidity
     if "humidity_percent" in latest:
         cols[1].metric("Humidity (%)", latest["humidity_percent"])
 
+    # Distance + ALERT
     if "distance_cm" in latest:
         distance_val = latest["distance_cm"]
         if distance_val < 3:
@@ -136,6 +141,10 @@ if not df.empty:
         else:
             cols[2].metric("Distance (cm)", distance_val)
 
+    # IMU
     if all(c in latest for c in imu_cols):
         imu_text = f"Roll: {latest['roll_deg']:.2f}, Pitch: {latest['pitch_deg']:.2f}, Yaw: {latest['yaw_deg']:.2f}"
         cols[3].metric("IMU Data", imu_text)
+
+# --- FORCE FULL PAGE RELOAD ---
+st.experimental_rerun()
