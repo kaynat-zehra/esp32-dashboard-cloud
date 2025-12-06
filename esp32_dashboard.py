@@ -82,7 +82,7 @@ if not df.empty:
     cols[1].metric("Humidity (%)", latest.get("humidity_percent", "-"))
 
     distance_val = latest.get("distance_cm", "-")
-    if distance_val != "-" and distance_val < 3:
+    if distance_val != "-" and distance_val < 2:
         cols[2].metric("Distance (cm)", f"{distance_val} ⚠️", delta="Too Close!", delta_color="inverse")
         st.error(f"⚠️ ALERT: Object too close! Distance = {distance_val} cm")
     else:
