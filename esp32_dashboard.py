@@ -54,10 +54,19 @@ def run_athena_query(query):
 
 # --- Query latest sensor data ---
 query = f"""
-SELECT *
-FROM {ATHENA_TABLE}
+SELECT 
+    timestamp_ms,
+    ky028_temp_c,
+    bme_temp_c,
+    humidity_percent,
+    pressure_hpa,
+    distance_cm,
+    mpu6050.roll_deg AS roll_deg,
+    mpu6050.pitch_deg AS pitch_deg,
+    mpu6050.yaw_deg AS yaw_deg
+FROM sensor_history
 ORDER BY timestamp_ms DESC
-LIMIT 100
+LIMIT 100;
 """
 df = run_athena_query(query)
 
