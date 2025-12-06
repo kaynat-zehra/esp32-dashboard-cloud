@@ -56,7 +56,7 @@ def run_athena_query(query):
 query = f"""
 SELECT *
 FROM {ATHENA_TABLE}
-ORDER BY timestamp_ms DESC
+ORDER BY timestamp_ms
 LIMIT 100
 """
 df = run_athena_query(query)
