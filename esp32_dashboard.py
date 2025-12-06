@@ -105,4 +105,4 @@ if not df.empty:
         st.plotly_chart(fig_imu, use_container_width=True)
 
 # --- Auto-refresh every 5 seconds ---
-st.experimental_rerun()
+# st.experimental_rerun()
